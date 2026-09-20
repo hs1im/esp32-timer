@@ -188,3 +188,41 @@ void ssd1351_draw_pixel(ssd1351_t *dev, int x, int y, uint16_t color) {
     ssd1351_fb_fill_rect(x, y, x, y, color);
     ssd1351_flush(dev);
 }
+
+// 프레임버퍼에만 그리기 (즉시 전송 안 함) - 공개 API
+void ssd1351_fb_set(int x0, int y0, int x1, int y1, uint16_t color) {
+    ssd1351_fb_fill_rect(x0, y0, x1, y1, color);
+}
+
+// 지정한 사각 영역만 화면으로 전송 (부분 갱신, 고속 리프레시용)
+void ssd1351_flush_rect(ssd1351_t *dev, int x0, int y0, int x1, int y1) {
+    if (fb == NULL) return;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= SSD1351_WIDTH) x1 = SSD1351_WIDTH - 1;
+    if (y1 >= SSD1351_HEIGHT) y1 = SSD1351_HEIGHT - 1;
+    if (x0 > x1 || y0 > y1) return;
+
+    int w = x1 - x0 + 1;
+    int h = y1 - y0 + 1;
+
+    // 부분 영역용 임시 DMA 버퍼 (재사용, 최초 1회만 할당)
+    static uint8_t *region_buf = NULL;
+    static size_t region_buf_cap = 0;
+    size_t need = (size_t)w * h * 2;
+    if (region_buf == NULL || need > region_buf_cap) {
+        if (region_buf) free(region_buf);
+        region_buf = heap_caps_malloc(need, MALLOC_CAP_DMA);
+        region_buf_cap = need;
+    }
+    if (region_buf == NULL) return;
+
+    for (int row = 0; row < h; row++) {
+        int src_offset = ((y0 + row) * SSD1351_WIDTH + x0) * 2;
+        memcpy(region_buf + row * w * 2, fb + src_offset, w * 2);
+    }
+
+    set_addr_window(dev, x0, y0, x1, y1);
+    gpio_high(dev->pin_dc);
+    spi_write_dma(dev, region_buf, need);
+}

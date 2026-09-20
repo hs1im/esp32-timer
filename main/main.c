@@ -1,8 +1,4 @@
 /*
- * main.c (v2)
- * SSD1351 OLED + 4버튼(HW 인터럽트) - FreeRTOS 태스크 기반 구조
- * 대상 보드: Seeed Studio XIAO ESP32-S3
- *
  * 배선:
  *   OLED VCC -> 3V3       OLED GND -> GND
  *   OLED CLK -> GPIO7 (D8)   OLED MOSI -> GPIO9 (D10)
@@ -15,8 +11,22 @@
  *
  * 사용 금지 핀: GPIO43/44 (D6/D7, USB UART0), GPIO19/20 (네이티브 USB)
  */
+/*
+ * main.c - 초시계(Stopwatch) 앱
+ * 대상 보드: Seeed Studio XIAO ESP32-S3
+ *
+ * BTN_1 (GPIO1, D0): 시작 / 일시정지
+ * BTN_2 (GPIO5, D4): 초기화 (정지 + 0으로 리셋)
+ * BTN_3, BTN_4: 추후 기능 추가 예정 (현재 무시)
+ *
+ * 화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 60Hz 트리거
+ *           (실패 시 자동 30Hz), 숫자 영역만 부분 전송
+ * 시간 측정: esp_timer_get_time() 기반, 갱신 주기와 완전히 독립적으로 계산
+ */
 #include "ssd1351.h"
 #include "button.h"
+#include "stopwatch.h"
+#include "digit7seg.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -28,99 +38,90 @@
 #define PIN_DC   2
 #define PIN_RST  3
 
+#define TARGET_HZ 60   // 안되면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐
+
 static const char *TAG = "main";
 
-static const uint16_t COLOR_TABLE[] = {
-    SSD1351_RED, SSD1351_GREEN, SSD1351_BLUE,
-    SSD1351_YELLOW, SSD1351_CYAN, SSD1351_MAGENTA
-};
-#define COLOR_COUNT (sizeof(COLOR_TABLE) / sizeof(COLOR_TABLE[0]))
+// 숫자 레이아웃: "MM:SS" 형식, 5칸(digit,digit,colon,digit,digit)
+#define DIGIT_W   22
+#define DIGIT_H   50
+#define DIGIT_TH  6
+#define COLON_W   14
+#define GAP       4
 
-// 디스플레이 태스크에 보내는 명령
-typedef enum {
-    DISP_CMD_NEXT_COLOR,
-    DISP_CMD_PREV_COLOR,
-    DISP_CMD_TOGGLE_AUTO,
-    DISP_CMD_RESET,
-} disp_cmd_t;
+#define AREA_Y    39   // (128-50)/2 근처, 세로 중앙
 
-static QueueHandle_t s_disp_cmd_queue;
+static int area_x0, area_x1;
 
-/* ---------------- 버튼 태스크 ---------------- */
-// button_init()이 만든 큐에서 원시 눌림 이벤트를 받아
-// 디스플레이 명령으로 변환해서 disp_cmd_queue로 전달
+static void draw_time(int64_t elapsed_ms, bool force_full) {
+    int total_sec = (int)(elapsed_ms / 1000);
+    int sec = total_sec % 60;
+    int min = (total_sec / 60) % 100;
+
+    int digits[4] = { min / 10, min % 10, sec / 10, sec % 10 };
+
+    int x = area_x0;
+    for (int i = 0; i < 4; i++) {
+        digit_draw(x, AREA_Y, DIGIT_W, DIGIT_H, DIGIT_TH, digits[i], SSD1351_WHITE, SSD1351_BLACK);
+        x += DIGIT_W + GAP;
+        if (i == 1) {
+            colon_draw(x, AREA_Y, DIGIT_H, 6, SSD1351_WHITE, SSD1351_BLACK);
+            x += COLON_W + GAP;
+        }
+    }
+}
+
+static void display_task(void *arg) {
+    ssd1351_t oled;
+    ESP_LOGI(TAG, "SSD1351 OLED 초기화 시작");
+    ssd1351_init(&oled, PIN_SCK, PIN_MOSI, PIN_CS, PIN_DC, PIN_RST);
+    ssd1351_fill_screen(&oled, SSD1351_BLACK);
+
+    int total_w = DIGIT_W * 4 + COLON_W + GAP * 4;
+    area_x0 = (SSD1351_WIDTH - total_w) / 2;
+    area_x1 = area_x0 + total_w - 1;
+
+    SemaphoreHandle_t tick_sem = stopwatch_init(TARGET_HZ);
+
+    draw_time(0, true);
+    ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
+
+    while (1) {
+        if (xSemaphoreTake(tick_sem, portMAX_DELAY) == pdTRUE) {
+            int64_t elapsed = stopwatch_get_elapsed_ms();
+            draw_time(elapsed, false);
+            ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
+        }
+    }
+}
+
 static void button_task(void *arg) {
     QueueHandle_t btn_evt_queue = (QueueHandle_t)arg;
     button_id_t evt;
 
     while (1) {
         if (xQueueReceive(btn_evt_queue, &evt, portMAX_DELAY)) {
-            disp_cmd_t cmd;
             switch (evt) {
-                case BTN_1: cmd = DISP_CMD_NEXT_COLOR;  ESP_LOGI(TAG, "BTN_1 pressed -> next color"); break;
-                case BTN_2: cmd = DISP_CMD_PREV_COLOR;  ESP_LOGI(TAG, "BTN_2 pressed -> prev color"); break;
-                case BTN_3: cmd = DISP_CMD_TOGGLE_AUTO; ESP_LOGI(TAG, "BTN_3 pressed -> toggle auto"); break;
-                case BTN_4: cmd = DISP_CMD_RESET;       ESP_LOGI(TAG, "BTN_4 pressed -> reset"); break;
-                default: continue;
-            }
-            xQueueSend(s_disp_cmd_queue, &cmd, 0);
-        }
-    }
-}
-
-/* ---------------- 디스플레이 태스크 ---------------- */
-// OLED(SPI)는 이 태스크만 접근합니다 (동시 접근 방지)
-static void display_task(void *arg) {
-    ssd1351_t oled;
-    ESP_LOGI(TAG, "SSD1351 OLED 초기화 시작");
-    ssd1351_init(&oled, PIN_SCK, PIN_MOSI, PIN_CS, PIN_DC, PIN_RST);
-
-    int color_idx = 0;
-    bool auto_cycle = true;
-    disp_cmd_t cmd;
-
-    TickType_t last_auto_tick = xTaskGetTickCount();
-
-    while (1) {
-        // 명령 큐 확인 (최대 100ms 대기, 없으면 자동 애니메이션 진행)
-        if (xQueueReceive(s_disp_cmd_queue, &cmd, pdMS_TO_TICKS(100))) {
-            switch (cmd) {
-                case DISP_CMD_NEXT_COLOR:
-                    color_idx = (color_idx + 1) % COLOR_COUNT;
+                case BTN_1:
+                    stopwatch_toggle();
+                    ESP_LOGI(TAG, "BTN_1 -> toggle (state=%d)", stopwatch_get_state());
                     break;
-                case DISP_CMD_PREV_COLOR:
-                    color_idx = (color_idx - 1 + COLOR_COUNT) % COLOR_COUNT;
+                case BTN_2:
+                    stopwatch_reset();
+                    ESP_LOGI(TAG, "BTN_2 -> reset");
                     break;
-                case DISP_CMD_TOGGLE_AUTO:
-                    auto_cycle = !auto_cycle;
-                    break;
-                case DISP_CMD_RESET:
-                    color_idx = 0;
-                    auto_cycle = true;
+                case BTN_3:
+                case BTN_4:
+                    ESP_LOGI(TAG, "BTN_3/4 눌림 (아직 기능 없음)");
                     break;
             }
-            ssd1351_fill_screen(&oled, COLOR_TABLE[color_idx]);
-            ssd1351_fill_rect(&oled, 44, 44, 83, 83, SSD1351_BLACK);
-            continue;
-        }
-
-        // 자동 색상 순환 (버튼3으로 on/off 가능)
-        if (auto_cycle && (xTaskGetTickCount() - last_auto_tick) >= pdMS_TO_TICKS(1500)) {
-            color_idx = (color_idx + 1) % COLOR_COUNT;
-            ssd1351_fill_screen(&oled, COLOR_TABLE[color_idx]);
-            ssd1351_fill_rect(&oled, 44, 44, 83, 83, SSD1351_BLACK);
-            last_auto_tick = xTaskGetTickCount();
         }
     }
 }
 
 void app_main(void) {
-    s_disp_cmd_queue = xQueueCreate(10, sizeof(disp_cmd_t));
     QueueHandle_t btn_evt_queue = button_init();
 
-    // 디스플레이 태스크: SPI 통신이 있으니 스택을 넉넉히, 우선순위는 보통
     xTaskCreate(display_task, "display_task", 4096, NULL, 5, NULL);
-
-    // 버튼 태스크: 가벼운 처리, 우선순위를 조금 더 높게 둬서 반응성 확보
     xTaskCreate(button_task, "button_task", 2048, (void *)btn_evt_queue, 6, NULL);
 }

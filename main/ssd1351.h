@@ -41,3 +41,9 @@ void ssd1351_fill_rect(ssd1351_t *dev, int x0, int y0, int x1, int y1, uint16_t 
 
 /* 단일 픽셀을 그립니다. */
 void ssd1351_draw_pixel(ssd1351_t *dev, int x, int y, uint16_t color);
+
+/* 프레임버퍼에만 그립니다 (즉시 전송 안 함, 부분 갱신용) */
+void ssd1351_fb_set(int x0, int y0, int x1, int y1, uint16_t color);
+
+/* 지정한 영역만 화면에 전송합니다 (고속 부분 리프레시용) */
+void ssd1351_flush_rect(ssd1351_t *dev, int x0, int y0, int x1, int y1);
