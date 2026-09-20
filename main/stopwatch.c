@@ -81,6 +81,10 @@ void stopwatch_toggle(void) {
 }
 
 void stopwatch_reset(void) {
+    if (s_state == SW_RUNNING) {
+        return;
+    }
+
     s_state = SW_STOPPED;
     s_accumulated_us = 0;
     s_start_us = 0;

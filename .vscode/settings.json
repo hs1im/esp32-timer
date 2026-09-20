@@ -13,7 +13,7 @@
     "--query-driver=**",
     "--compile-commands-dir=d:\\coding\\esp32-timer\\build"
   ],
-  "idf.flashType": "JTAG",
+  "idf.flashType": "UART",
   "cmake.configureOnOpen": false,
   "cmake.automaticReconfigure": false
 }

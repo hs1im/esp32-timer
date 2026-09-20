@@ -9,13 +9,12 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-#define BTN_COUNT 4
+#define BTN_COUNT 3
 
 typedef enum {
     BTN_1 = 0,  // D0 - GPIO1
     BTN_2,      // D4 - GPIO5
     BTN_3,      // D5 - GPIO6
-    BTN_4,      // D9 - GPIO8
 } button_id_t;
 
 /*

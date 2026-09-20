@@ -1,6 +1,7 @@
 /*
- * button.c (v2) - 이전 button.c를 이 내용으로 교체하세요.
- * BTN_1: 시작/일시정지, BTN_2: 초기화, BTN_3/BTN_4: 추후 사용
+ * button.c
+ * BTN_1: 시작/일시정지, BTN_2: 초기화(일시정지 중에만), BTN_3: 추후 사용
+ * (BTN_4/GPIO8은 배터리 ADC용으로 넘어가서 버튼에서 제외됨)
  */
 #include "button.h"
 #include "driver/gpio.h"
@@ -9,12 +10,12 @@
 
 static const char *TAG = "button";
 
-static const int btn_gpio[BTN_COUNT] = { 1, 5, 6, 8 };
+static const int btn_gpio[BTN_COUNT] = { 1, 5, 6 };
 
 static QueueHandle_t s_evt_queue = NULL;
 
 static volatile int64_t s_last_isr_us[BTN_COUNT] = {0};
-#define DEBOUNCE_US 150000  // 150ms
+#define DEBOUNCE_US 200000 // 200ms
 
 static void IRAM_ATTR gpio_isr_handler(void *arg) {
     int idx = (int)(intptr_t)arg;
@@ -44,6 +45,6 @@ QueueHandle_t button_init(void) {
         gpio_isr_handler_add(btn_gpio[i], gpio_isr_handler, (void *)(intptr_t)i);
     }
 
-    ESP_LOGI(TAG, "4 buttons ready (BTN1/2 active, BTN3/4 reserved)");
+    ESP_LOGI(TAG, "3 buttons ready (GPIO1, GPIO5, GPIO6)");
     return s_evt_queue;
 }

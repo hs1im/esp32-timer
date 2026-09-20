@@ -1,27 +1,31 @@
 /*
  * 배선:
- *   OLED VCC -> 3V3       OLED GND -> GND
- *   OLED CLK -> GPIO7 (D8)   OLED MOSI -> GPIO9 (D10)
- *   OLED RES -> GPIO3 (D2)   OLED DC   -> GPIO2 (D1)
- *   OLED CS  -> GPIO4 (D3)
+ *  OLED VCC -> 3V3     OLED GND -> GND
+ *  OLED CLK -> GPIO7 (D8)   OLED MOSI -> GPIO9 (D10)
+ *  OLED RES -> GPIO3 (D2)   OLED DC   -> GPIO2 (D1)
+ *  OLED CS  -> GPIO4 (D3)
  *
- *   BTN_1 -> GPIO1 (D0)   BTN_2 -> GPIO5 (D4)
- *   BTN_3 -> GPIO6 (D5)   BTN_4 -> GPIO8 (D9)
- *   (버튼 반대쪽 다리는 모두 GND)
+ *  BTN_1 -> GPIO1 (D0)   BTN_2 -> GPIO5 (D4)   BTN_3 -> GPIO6 (D5)
+ *  (버튼 반대쪽 다리는 모두 GND)
  *
- * 사용 금지 핀: GPIO43/44 (D6/D7, USB UART0), GPIO19/20 (네이티브 USB)
+ *  배터리 ADC -> GPIO8 (D9, 예전 BTN_4 자리) - 100k+100k 전압 분배기 경유
+ *
+ *  사용 금지 핀: GPIO43/44 (D6/D7, USB UART0), GPIO19/20 (네이티브 USB)
  */
 /*
  * main.c - 초시계(Stopwatch) 앱
  * 대상 보드: Seeed Studio XIAO ESP32-S3
  *
- * BTN_1 (GPIO1, D0): 시작 / 일시정지
- * BTN_2 (GPIO5, D4): 초기화 (정지 + 0으로 리셋)
- * BTN_3, BTN_4: 추후 기능 추가 예정 (현재 무시)
+ *  BTN_1 (GPIO1, D0): 시작 / 일시정지
+ *  BTN_2 (GPIO5, D4): 초기화 (일시정지 상태에서만 동작, 실행 중엔 무시됨)
+ *  BTN_3 (GPIO6, D5): 추후 기능 추가 예정 (현재 무시)
  *
- * 화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 60Hz 트리거
- *           (실패 시 자동 30Hz), 숫자 영역만 부분 전송
- * 시간 측정: esp_timer_get_time() 기반, 갱신 주기와 완전히 독립적으로 계산
+ *  화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 60Hz 트리거
+ *  (실패 시 자동 30Hz), 숫자 영역만 부분 전송
+ *  시간 측정: esp_timer_get_time() 기반, 갱신 주기와 완전히 독립적으로 계산
+ *
+ *  상단 바: 배터리 잔량 (1초에 한 번 갱신)
+ *  하단 바: 스톱워치 실행 중일 때만 초록색으로 표시
  */
 #include "ssd1351.h"
 #include "button.h"
@@ -31,6 +35,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "battery.h"
 
 #define PIN_SCK  7
 #define PIN_MOSI 9
@@ -38,18 +43,26 @@
 #define PIN_DC   2
 #define PIN_RST  3
 
-#define TARGET_HZ 60   // 안되면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐
+#define TARGET_HZ 600 // 안되면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐
 
 static const char *TAG = "main";
 
 // 숫자 레이아웃: "MM:SS" 형식, 5칸(digit,digit,colon,digit,digit)
-#define DIGIT_W   22
-#define DIGIT_H   50
-#define DIGIT_TH  6
-#define COLON_W   14
-#define GAP       4
+#define DIGIT_W  22
+#define DIGIT_H  50
+#define DIGIT_TH 6
+#define COLON_W  14
+#define GAP      4
 
-#define AREA_Y    39   // (128-50)/2 근처, 세로 중앙
+#define AREA_Y 39 // (128-50)/2 근처, 세로 중앙
+
+// 상단 배터리 바
+#define BATT_BAR_Y0 0
+#define BATT_BAR_Y1 5
+
+// 하단 실행 표시 바
+#define RUN_BAR_Y0 (SSD1351_HEIGHT - 6)
+#define RUN_BAR_Y1 (SSD1351_HEIGHT - 1)
 
 static int area_x0, area_x1;
 
@@ -86,11 +99,38 @@ static void display_task(void *arg) {
     draw_time(0, true);
     ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
 
+    int battery_tick = 0;
+    sw_state_t last_state = SW_STOPPED;
+    bool first_run_draw = true;
+
     while (1) {
         if (xSemaphoreTake(tick_sem, portMAX_DELAY) == pdTRUE) {
+            // 1) 시간 표시 갱신 (매 틱마다, 부드럽게)
             int64_t elapsed = stopwatch_get_elapsed_ms();
             draw_time(elapsed, false);
             ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
+
+            // 2) 배터리 바 (약 1초에 한 번만 갱신)
+            if (++battery_tick >= TARGET_HZ) {
+                battery_tick = 0;
+                int pct = battery_read_percent();
+                int bar_width = (pct * SSD1351_WIDTH) / 100;
+
+                ssd1351_fb_set(0, BATT_BAR_Y0, SSD1351_WIDTH - 1, BATT_BAR_Y1, SSD1351_BLACK);
+                ssd1351_fb_set(0, BATT_BAR_Y0, bar_width - 1, BATT_BAR_Y1, SSD1351_GREEN);
+                ssd1351_flush_rect(&oled, 0, BATT_BAR_Y0, SSD1351_WIDTH - 1, BATT_BAR_Y1);
+            }
+
+            // 3) 실행 상태 표시 바 (상태가 바뀔 때만 갱신 -> 불필요한 전송/깜빡임 방지)
+            sw_state_t cur_state = stopwatch_get_state();
+            if (cur_state != last_state || first_run_draw) {
+                last_state = cur_state;
+                first_run_draw = false;
+
+                uint16_t color = (cur_state == SW_RUNNING) ? SSD1351_GREEN : SSD1351_BLACK;
+                ssd1351_fb_set(0, RUN_BAR_Y0, SSD1351_WIDTH - 1, RUN_BAR_Y1, color);
+                ssd1351_flush_rect(&oled, 0, RUN_BAR_Y0, SSD1351_WIDTH - 1, RUN_BAR_Y1);
+            }
         }
     }
 }
@@ -104,15 +144,14 @@ static void button_task(void *arg) {
             switch (evt) {
                 case BTN_1:
                     stopwatch_toggle();
-                    ESP_LOGI(TAG, "BTN_1 -> toggle (state=%d)", stopwatch_get_state());
                     break;
                 case BTN_2:
-                    stopwatch_reset();
-                    ESP_LOGI(TAG, "BTN_2 -> reset");
+                    stopwatch_reset(); // 일시정지 상태에서만 실제로 리셋됨 (stopwatch.c에서 처리)
                     break;
                 case BTN_3:
-                case BTN_4:
-                    ESP_LOGI(TAG, "BTN_3/4 눌림 (아직 기능 없음)");
+                    // 추후 기능 추가 예정
+                    break;
+                default:
                     break;
             }
         }
@@ -120,6 +159,7 @@ static void button_task(void *arg) {
 }
 
 void app_main(void) {
+    battery_init();
     QueueHandle_t btn_evt_queue = button_init();
 
     xTaskCreate(display_task, "display_task", 4096, NULL, 5, NULL);
