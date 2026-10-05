@@ -1,6 +1,6 @@
 /*
  * button.h
- * 4개 버튼을 GPIO 하드웨어 인터럽트로 처리하는 모듈
+ * 3개 버튼을 GPIO 하드웨어 인터럽트로 처리하는 모듈
  * 대상 보드: Seeed Studio XIAO ESP32-S3
  */
 #pragma once

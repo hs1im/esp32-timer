@@ -21,7 +21,8 @@ SemaphoreHandle_t stopwatch_init(int target_hz);
 /* BTN1 동작: STOPPED/PAUSED -> RUNNING, RUNNING -> PAUSED */
 void stopwatch_toggle(void);
 
-/* BTN2 동작: 정지 후 0으로 초기화 */
+/* BTN2 동작: STOPPED/PAUSED 상태에서만 0으로 초기화.
+   RUNNING 중에는 무시됨 (먼저 일시정지해야 함) */
 void stopwatch_reset(void);
 
 /* 현재 경과 시간을 ms 단위로 반환 (RUNNING 중이면 실시간 계산) */

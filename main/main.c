@@ -20,11 +20,11 @@
  *  BTN_2 (GPIO5, D4): 초기화 (일시정지 상태에서만 동작, 실행 중엔 무시됨)
  *  BTN_3 (GPIO6, D5): 추후 기능 추가 예정 (현재 무시)
  *
- *  화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 60Hz 트리거
+ *  화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 TARGET_HZ 주기 트리거
  *  (실패 시 자동 30Hz), 숫자 영역만 부분 전송
  *  시간 측정: esp_timer_get_time() 기반, 갱신 주기와 완전히 독립적으로 계산
  *
- *  상단 바: 배터리 잔량 (1초에 한 번 갱신)
+ *  상단 바: 배터리 잔량 (TARGET_HZ 틱마다 한 번 갱신, 현재 설정은 약 10초에 한 번)
  *  하단 바: 스톱워치 실행 중일 때만 초록색으로 표시
  */
 #include "ssd1351.h"
@@ -43,7 +43,10 @@
 #define PIN_DC   2
 #define PIN_RST  3
 
-#define TARGET_HZ 600 // 안되면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐
+// gptimer 틱 주파수이자 배터리 바 갱신 카운터 기준값 (battery_tick >= TARGET_HZ).
+// 의도적으로 600으로 설정: 배터리 바를 약 10초에 한 번 갱신해서 확인하기 위함.
+// (타이머 설정이 실패하면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐. 일반 60Hz 운용 시 값을 60으로)
+#define TARGET_HZ 600
 
 static const char *TAG = "main";
 
@@ -110,7 +113,7 @@ static void display_task(void *arg) {
             draw_time(elapsed, false);
             ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
 
-            // 2) 배터리 바 (약 1초에 한 번만 갱신)
+            // 2) 배터리 바 (TARGET_HZ 틱마다 한 번만 갱신, 현재 약 10초 간격)
             if (++battery_tick >= TARGET_HZ) {
                 battery_tick = 0;
                 int pct = battery_read_percent();
