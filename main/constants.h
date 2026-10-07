@@ -25,6 +25,10 @@
 #define OLED_SPI_HOST     SPI2_HOST       // SPI peripheral used by the display
 #define OLED_SPI_CLOCK_HZ (8 * 1000 * 1000) // SPI clock; 20MHz showed noise stripes with jumper wires
 
+#define DISPLAY_BRIGHTNESS_PERCENT 25     // Panel brightness 1-100%. Lower values save battery.
+                                          // Applied through the SSD1351 master contrast register,
+                                          // which has 16 steps (1/16 ... 16/16 of the drive current).
+
 /* ------------------------------------------------------------------ */
 /* Buttons (GPIO interrupt, internal pull-up, active low)              */
 /* ------------------------------------------------------------------ */

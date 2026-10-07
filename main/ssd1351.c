@@ -39,6 +39,13 @@ static const char *TAG = "ssd1351";
 #define CMD_MUXRATIO       0xCA
 #define CMD_COMMANDLOCK    0xFD
 
+// Master contrast register value (0x00-0x0F) derived from DISPLAY_BRIGHTNESS_PERCENT.
+// Register value n means (n+1)/16 of the full drive current, so 100% -> 0x0F, 25% -> 0x03.
+#define MASTER_CONTRAST_STEPS 16
+#define MASTER_CONTRAST_VALUE ((DISPLAY_BRIGHTNESS_PERCENT * MASTER_CONTRAST_STEPS) / 100 - 1)
+_Static_assert(DISPLAY_BRIGHTNESS_PERCENT >= 7 && DISPLAY_BRIGHTNESS_PERCENT <= 100,
+               "DISPLAY_BRIGHTNESS_PERCENT must be in the range 7..100");
+
 // DMA-capable framebuffer (128*128*2 bytes = 32KB)
 static uint8_t *fb = NULL;
 
@@ -144,7 +151,7 @@ void ssd1351_init(ssd1351_t *dev,
     send_cmd(dev, CMD_VCOMH);      send_data_byte(dev, 0x05);
     send_cmd(dev, CMD_NORMALDISPLAY);
     send_cmd(dev, CMD_CONTRASTABC); { uint8_t d[3]={0xC8,0x80,0xC8}; send_data(dev,d,3); }
-    send_cmd(dev, CMD_CONTRASTMASTER); send_data_byte(dev, 0x0F);
+    send_cmd(dev, CMD_CONTRASTMASTER); send_data_byte(dev, MASTER_CONTRAST_VALUE);
     send_cmd(dev, CMD_VSL);        { uint8_t d[3]={0xA0,0xB5,0x55}; send_data(dev,d,3); }
     send_cmd(dev, CMD_PRECHARGE2); send_data_byte(dev, 0x01);
     send_cmd(dev, CMD_DISPLAYON);
