@@ -3,6 +3,7 @@
  * Time measurement (esp_timer) + display refresh trigger (gptimer hardware interrupt)
  */
 #include "stopwatch.h"
+#include "constants.h"
 #include "driver/gptimer.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -35,7 +36,7 @@ static bool try_start_timer(int hz) {
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
         .direction = GPTIMER_COUNT_UP,
-        .resolution_hz = 1000000, // 1MHz -> 1 tick = 1us
+        .resolution_hz = GPTIMER_RESOLUTION_HZ,
     };
     if (gptimer_new_timer(&timer_config, &s_gptimer) != ESP_OK) return false;
 
@@ -61,8 +62,8 @@ SemaphoreHandle_t stopwatch_init(int target_hz) {
     s_tick_sem = xSemaphoreCreateBinary();
 
     if (!try_start_timer(target_hz)) {
-        ESP_LOGW(TAG, "%dHz setup failed, retrying at 30Hz", target_hz);
-        if (!try_start_timer(30)) {
+        ESP_LOGW(TAG, "%dHz setup failed, retrying at %dHz", target_hz, DISPLAY_FALLBACK_HZ);
+        if (!try_start_timer(DISPLAY_FALLBACK_HZ)) {
             ESP_LOGE(TAG, "gptimer init failed");
         }
     }

@@ -27,6 +27,7 @@
  *  Top bar: battery level (refreshed once every 10 seconds, based on esp_timer)
  *  Bottom bar: shown in green only while the stopwatch is running
  */
+#include "constants.h"
 #include "ssd1351.h"
 #include "button.h"
 #include "stopwatch.h"
@@ -38,35 +39,7 @@
 #include "esp_timer.h"
 #include "battery.h"
 
-#define PIN_SCK  7
-#define PIN_MOSI 9
-#define PIN_CS   4
-#define PIN_DC   2
-#define PIN_RST  3
-
-#define TARGET_HZ 60 // display refresh rate. Falls back to 30Hz inside stopwatch_init on failure
-
-// Battery bar refresh interval (real time from esp_timer_get_time(), independent of the refresh rate)
-#define BATT_UPDATE_INTERVAL_US (10 * 1000000LL)
-
 static const char *TAG = "main";
-
-// Digit layout: "MM:SS" format, 5 cells (digit, digit, colon, digit, digit)
-#define DIGIT_W  22
-#define DIGIT_H  50
-#define DIGIT_TH 6
-#define COLON_W  14
-#define GAP      4
-
-#define AREA_Y 39 // around (128-50)/2, vertically centered
-
-// Top battery bar
-#define BATT_BAR_Y0 0
-#define BATT_BAR_Y1 5
-
-// Bottom running indicator bar
-#define RUN_BAR_Y0 (SSD1351_HEIGHT - 6)
-#define RUN_BAR_Y1 (SSD1351_HEIGHT - 1)
 
 static int area_x0, area_x1;
 
@@ -79,11 +52,11 @@ static void draw_time(int64_t elapsed_ms, bool force_full) {
 
     int x = area_x0;
     for (int i = 0; i < 4; i++) {
-        digit_draw(x, AREA_Y, DIGIT_W, DIGIT_H, DIGIT_TH, digits[i], SSD1351_WHITE, SSD1351_BLACK);
-        x += DIGIT_W + GAP;
+        digit_draw(x, TIME_AREA_Y, DIGIT_W, DIGIT_H, DIGIT_TH, digits[i], SSD1351_WHITE, SSD1351_BLACK);
+        x += DIGIT_W + DIGIT_GAP;
         if (i == 1) {
-            colon_draw(x, AREA_Y, DIGIT_H, 6, SSD1351_WHITE, SSD1351_BLACK);
-            x += COLON_W + GAP;
+            colon_draw(x, TIME_AREA_Y, DIGIT_H, COLON_DOT_SIZE, SSD1351_WHITE, SSD1351_BLACK);
+            x += COLON_W + DIGIT_GAP;
         }
     }
 }
@@ -91,19 +64,19 @@ static void draw_time(int64_t elapsed_ms, bool force_full) {
 static void display_task(void *arg) {
     ssd1351_t oled;
     ESP_LOGI(TAG, "SSD1351 OLED init start");
-    ssd1351_init(&oled, PIN_SCK, PIN_MOSI, PIN_CS, PIN_DC, PIN_RST);
+    ssd1351_init(&oled, PIN_OLED_SCK, PIN_OLED_MOSI, PIN_OLED_CS, PIN_OLED_DC, PIN_OLED_RST);
     ssd1351_fill_screen(&oled, SSD1351_BLACK);
 
-    int total_w = DIGIT_W * 4 + COLON_W + GAP * 4;
+    int total_w = DIGIT_W * 4 + COLON_W + DIGIT_GAP * 4;
     area_x0 = (SSD1351_WIDTH - total_w) / 2;
     area_x1 = area_x0 + total_w - 1;
 
-    SemaphoreHandle_t tick_sem = stopwatch_init(TARGET_HZ);
+    SemaphoreHandle_t tick_sem = stopwatch_init(DISPLAY_REFRESH_HZ);
 
     draw_time(0, true);
-    ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
+    ssd1351_flush_rect(&oled, area_x0, TIME_AREA_Y, area_x1, TIME_AREA_Y + DIGIT_H - 1);
 
-    int64_t last_batt_us = -BATT_UPDATE_INTERVAL_US; // draw once right on the first tick
+    int64_t last_batt_us = -BATTERY_UPDATE_INTERVAL_US; // draw once right on the first tick
     sw_state_t last_state = SW_STOPPED;
     bool first_run_draw = true;
 
@@ -112,11 +85,11 @@ static void display_task(void *arg) {
             // 1) Update the time display (every tick, for smooth updates)
             int64_t elapsed = stopwatch_get_elapsed_ms();
             draw_time(elapsed, false);
-            ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
+            ssd1351_flush_rect(&oled, area_x0, TIME_AREA_Y, area_x1, TIME_AREA_Y + DIGIT_H - 1);
 
-            // 2) Battery bar (updated only once per BATT_UPDATE_INTERVAL_US, based on esp_timer)
+            // 2) Battery bar (updated only once per BATTERY_UPDATE_INTERVAL_US, based on esp_timer)
             int64_t now_us = esp_timer_get_time();
-            if (now_us - last_batt_us >= BATT_UPDATE_INTERVAL_US) {
+            if (now_us - last_batt_us >= BATTERY_UPDATE_INTERVAL_US) {
                 last_batt_us = now_us;
                 int pct = battery_read_percent();
                 int bar_width = (pct * SSD1351_WIDTH) / 100;
@@ -167,6 +140,6 @@ void app_main(void) {
     battery_init();
     QueueHandle_t btn_evt_queue = button_init();
 
-    xTaskCreate(display_task, "display_task", 4096, NULL, 5, NULL);
-    xTaskCreate(button_task, "button_task", 2048, (void *)btn_evt_queue, 6, NULL);
+    xTaskCreate(display_task, "display_task", DISPLAY_TASK_STACK, NULL, DISPLAY_TASK_PRIORITY, NULL);
+    xTaskCreate(button_task, "button_task", BUTTON_TASK_STACK, (void *)btn_evt_queue, BUTTON_TASK_PRIORITY, NULL);
 }

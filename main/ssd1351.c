@@ -105,15 +105,15 @@ void ssd1351_init(ssd1351_t *dev,
         .max_transfer_sz = SSD1351_WIDTH * SSD1351_HEIGHT * 2, // allow sending the whole framebuffer at once
     };
     // SPI_DMA_CH_AUTO -> GDMA channel is assigned automatically
-    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
+    ESP_ERROR_CHECK(spi_bus_initialize(OLED_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 8 * 1000 * 1000, // with DMA the clock can be raised and still be stable
+        .clock_speed_hz = OLED_SPI_CLOCK_HZ,
         .mode = 0,
         .spics_io_num = pin_cs,
         .queue_size = 2,
     };
-    ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &devcfg, &dev->spi));
+    ESP_ERROR_CHECK(spi_bus_add_device(OLED_SPI_HOST, &devcfg, &dev->spi));
 
     // Allocate the framebuffer in DMA-capable memory (required: MALLOC_CAP_DMA)
     fb = heap_caps_malloc(SSD1351_WIDTH * SSD1351_HEIGHT * 2, MALLOC_CAP_DMA);

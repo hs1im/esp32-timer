@@ -7,9 +7,7 @@
 
 #include <stdint.h>
 #include "driver/spi_master.h"
-
-#define SSD1351_WIDTH   128
-#define SSD1351_HEIGHT  128
+#include "constants.h" // SSD1351_WIDTH / SSD1351_HEIGHT
 
 // RGB565 color macros
 #define SSD1351_BLACK   0x0000

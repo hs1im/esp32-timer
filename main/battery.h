@@ -6,8 +6,7 @@
 #pragma once
 
 #include <stdint.h>
-
-#define BATTERY_ADC_GPIO 8   // D9, reuses the former BTN_4 pin
+#include "constants.h" // BATTERY_* constants
 
 void battery_init(void);
 

@@ -10,14 +10,6 @@
 
 static const char *TAG = "battery";
 
-// GPIO8 -> ADC1 channel mapping (ESP32-S3: ADC1_CH0=GPIO1 ... ADC1_CH7=GPIO8)
-#define BATTERY_ADC_CHANNEL ADC_CHANNEL_7
-#define VOLTAGE_DIVIDER_RATIO 2.0f  // 100k:100k = 1/2 divider -> actual voltage is 2x the pin voltage
-
-// Voltage range of a 1-cell LiPo (adjust to the battery spec if needed)
-#define BATTERY_FULL_V  4.2f
-#define BATTERY_EMPTY_V 3.0f
-
 static adc_oneshot_unit_handle_t s_adc_handle;
 static adc_cali_handle_t s_cali_handle;
 static bool s_cali_ok = false;
@@ -59,7 +51,7 @@ float battery_read_voltage(void) {
         mv = (raw * 3300) / 4095; // rough approximation
     }
 
-    return (mv / 1000.0f) * VOLTAGE_DIVIDER_RATIO;
+    return (mv / 1000.0f) * BATTERY_DIVIDER_RATIO;
 }
 
 int battery_read_percent(void) {
