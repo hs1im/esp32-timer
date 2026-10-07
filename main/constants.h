@@ -69,16 +69,17 @@
 #define BUTTON_TASK_PRIORITY  6           // Higher than the display task so button presses are handled promptly
 
 /* ------------------------------------------------------------------ */
-/* Screen layout: time "MM:SS" = 5 cells (digit, digit, colon, digit, digit) */
+/* Screen layout: time "HH:MM:SS" = 8 cells (2 digits, colon, 2 digits, colon, 2 digits) */
 /* ------------------------------------------------------------------ */
 
-#define DIGIT_W        22                 // Width of one digit in pixels
-#define DIGIT_H        50                 // Height of one digit in pixels
-#define DIGIT_TH       6                  // Segment thickness of a digit in pixels
-#define COLON_DOT_SIZE 6                  // Side length of one colon dot in pixels
-#define COLON_W        14                 // Width of the colon cell in pixels
-#define DIGIT_GAP      4                  // Space between neighbouring cells in pixels
-#define TIME_AREA_Y    39                 // Top y of the time area, about (128-50)/2 -> vertically centered
+#define DIGIT_W        14                 // Width of one digit in pixels
+#define DIGIT_H        40                 // Height of one digit in pixels
+#define DIGIT_TH       3                  // Segment thickness of a digit in pixels
+#define COLON_DOT_SIZE 3                  // Side length of one colon dot in pixels
+#define COLON_W        (COLON_DOT_SIZE * 2) // Width of the colon cell in pixels
+#define DIGIT_GAP      3                  // Space between neighbouring cells in pixels
+#define TIME_AREA_Y    ((SSD1351_HEIGHT - DIGIT_H) / 2) // Top y of the time area -> vertically centered
+#define TIME_HOURS_MOD 100                // Hours wrap around after this value (99:59:59 -> 00:00:00)
 
 #define BATT_BAR_Y0    0                  // Top battery bar: first row
 #define BATT_BAR_Y1    5                  // Top battery bar: last row

@@ -46,15 +46,17 @@ static int area_x0, area_x1;
 static void draw_time(int64_t elapsed_ms, bool force_full) {
     int total_sec = (int)(elapsed_ms / 1000);
     int sec = total_sec % 60;
-    int min = (total_sec / 60) % 100;
+    int min = (total_sec / 60) % 60;
+    int hour = (total_sec / 3600) % TIME_HOURS_MOD;
 
-    int digits[4] = { min / 10, min % 10, sec / 10, sec % 10 };
+    int digits[6] = { hour / 10, hour % 10, min / 10, min % 10, sec / 10, sec % 10 };
 
     int x = area_x0;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 6; i++) {
         digit_draw(x, TIME_AREA_Y, DIGIT_W, DIGIT_H, DIGIT_TH, digits[i], SSD1351_WHITE, SSD1351_BLACK);
         x += DIGIT_W + DIGIT_GAP;
-        if (i == 1) {
+        // Colon after the hour pair and after the minute pair
+        if (i == 1 || i == 3) {
             colon_draw(x, TIME_AREA_Y, DIGIT_H, COLON_DOT_SIZE, SSD1351_WHITE, SSD1351_BLACK);
             x += COLON_W + DIGIT_GAP;
         }
@@ -67,7 +69,8 @@ static void display_task(void *arg) {
     ssd1351_init(&oled, PIN_OLED_SCK, PIN_OLED_MOSI, PIN_OLED_CS, PIN_OLED_DC, PIN_OLED_RST);
     ssd1351_fill_screen(&oled, SSD1351_BLACK);
 
-    int total_w = DIGIT_W * 4 + COLON_W + DIGIT_GAP * 4;
+    // 6 digits + 2 colons = 8 cells -> 7 gaps between them
+    int total_w = DIGIT_W * 6 + COLON_W * 2 + DIGIT_GAP * 7;
     area_x0 = (SSD1351_WIDTH - total_w) / 2;
     area_x1 = area_x0 + total_w - 1;
 
