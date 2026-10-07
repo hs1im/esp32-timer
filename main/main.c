@@ -20,11 +20,11 @@
  *  BTN_2 (GPIO5, D4): 초기화 (일시정지 상태에서만 동작, 실행 중엔 무시됨)
  *  BTN_3 (GPIO6, D5): 추후 기능 추가 예정 (현재 무시)
  *
- *  화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 TARGET_HZ 주기 트리거
+ *  화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 60Hz 트리거
  *  (실패 시 자동 30Hz), 숫자 영역만 부분 전송
  *  시간 측정: esp_timer_get_time() 기반, 갱신 주기와 완전히 독립적으로 계산
  *
- *  상단 바: 배터리 잔량 (TARGET_HZ 틱마다 한 번 갱신, 현재 설정은 약 10초에 한 번)
+ *  상단 바: 배터리 잔량 (esp_timer 기준 10초에 한 번 갱신)
  *  하단 바: 스톱워치 실행 중일 때만 초록색으로 표시
  */
 #include "ssd1351.h"
@@ -35,6 +35,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "battery.h"
 
 #define PIN_SCK  7
@@ -43,10 +44,10 @@
 #define PIN_DC   2
 #define PIN_RST  3
 
-// gptimer 틱 주파수이자 배터리 바 갱신 카운터 기준값 (battery_tick >= TARGET_HZ).
-// 의도적으로 600으로 설정: 배터리 바를 약 10초에 한 번 갱신해서 확인하기 위함.
-// (타이머 설정이 실패하면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐. 일반 60Hz 운용 시 값을 60으로)
-#define TARGET_HZ 600
+#define TARGET_HZ 60 // 화면 갱신 주파수. 안되면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐
+
+// 배터리 바 갱신 주기 (esp_timer_get_time() 기준 실제 시간, 화면 갱신 주파수와 무관)
+#define BATT_UPDATE_INTERVAL_US (10 * 1000000LL)
 
 static const char *TAG = "main";
 
@@ -102,7 +103,7 @@ static void display_task(void *arg) {
     draw_time(0, true);
     ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
 
-    int battery_tick = 0;
+    int64_t last_batt_us = -BATT_UPDATE_INTERVAL_US; // 첫 틱에 바로 한 번 그림
     sw_state_t last_state = SW_STOPPED;
     bool first_run_draw = true;
 
@@ -113,9 +114,10 @@ static void display_task(void *arg) {
             draw_time(elapsed, false);
             ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
 
-            // 2) 배터리 바 (TARGET_HZ 틱마다 한 번만 갱신, 현재 약 10초 간격)
-            if (++battery_tick >= TARGET_HZ) {
-                battery_tick = 0;
+            // 2) 배터리 바 (esp_timer 기준 BATT_UPDATE_INTERVAL_US마다 한 번만 갱신)
+            int64_t now_us = esp_timer_get_time();
+            if (now_us - last_batt_us >= BATT_UPDATE_INTERVAL_US) {
+                last_batt_us = now_us;
                 int pct = battery_read_percent();
                 int bar_width = (pct * SSD1351_WIDTH) / 100;
 
