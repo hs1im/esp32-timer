@@ -1,7 +1,7 @@
 /*
  * button.c
- * BTN_1: 시작/일시정지, BTN_2: 초기화(일시정지 중에만), BTN_3: 추후 사용
- * (BTN_4/GPIO8은 배터리 ADC용으로 넘어가서 버튼에서 제외됨)
+ * BTN_1: start/pause, BTN_2: reset (only while paused), BTN_3: reserved for later
+ * (BTN_4/GPIO8 was handed over to the battery ADC and removed from the buttons)
  */
 #include "button.h"
 #include "driver/gpio.h"

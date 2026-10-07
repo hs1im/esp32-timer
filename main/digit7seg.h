@@ -1,17 +1,17 @@
 /*
  * digit7seg.h
- * 7-세그먼트 스타일 숫자 렌더러 (사각형 조합, 폰트 불필요)
+ * 7-segment style digit renderer (built from rectangles, no font needed)
  */
 #pragma once
 #include <stdint.h>
 #include "ssd1351.h"
 
-/* (x,y)를 좌상단으로, w x h 크기의 숫자(0~9)를 프레임버퍼에 그립니다.
-   thick: 세그먼트 굵기, color/bg: 켜진/꺼진 색 */
+/* Draws a w x h digit (0-9) into the framebuffer with (x,y) as the top-left corner.
+   thick: segment thickness, color/bg: lit / unlit color */
 void digit_draw(int x, int y, int w, int h, int thick, int digit, uint16_t color, uint16_t bg);
 
-/* 콜론(:) 을 그립니다 */
+/* Draws a colon (:) */
 void colon_draw(int x, int y, int h, int dot_size, uint16_t color, uint16_t bg);
 
-/* digit_draw 한 칸이 차지하는 총 너비(세그먼트 폭 포함) 계산 */
+/* Total width of one digit_draw cell (including segment width) */
 int digit_total_width(int w, int thick);

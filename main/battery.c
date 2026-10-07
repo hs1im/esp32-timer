@@ -1,6 +1,6 @@
 /*
  * battery.c
- * ESP-IDF adc_oneshot + adc_cali API 기반 배터리 전압 측정
+ * Battery voltage measurement based on the ESP-IDF adc_oneshot + adc_cali APIs
  */
 #include "battery.h"
 #include "esp_adc/adc_oneshot.h"
@@ -10,11 +10,11 @@
 
 static const char *TAG = "battery";
 
-// GPIO8 -> ADC1 채널 매핑 (ESP32-S3: ADC1_CH0=GPIO1 ... ADC1_CH7=GPIO8)
+// GPIO8 -> ADC1 channel mapping (ESP32-S3: ADC1_CH0=GPIO1 ... ADC1_CH7=GPIO8)
 #define BATTERY_ADC_CHANNEL ADC_CHANNEL_7
-#define VOLTAGE_DIVIDER_RATIO 2.0f  // 100k:100k = 1/2 분배 -> 실제 전압은 2배
+#define VOLTAGE_DIVIDER_RATIO 2.0f  // 100k:100k = 1/2 divider -> actual voltage is 2x the pin voltage
 
-// 1셀 리튬폴리머 기준 전압 범위 (필요 시 배터리 스펙에 맞게 조정)
+// Voltage range of a 1-cell LiPo (adjust to the battery spec if needed)
 #define BATTERY_FULL_V  4.2f
 #define BATTERY_EMPTY_V 3.0f
 
@@ -29,7 +29,7 @@ void battery_init(void) {
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_cfg, &s_adc_handle));
 
     adc_oneshot_chan_cfg_t chan_cfg = {
-        .atten = ADC_ATTEN_DB_12,   // 풀 레인지에 가깝게 (ESP32-S3 최대 감쇄)
+        .atten = ADC_ATTEN_DB_12,   // Close to full range (maximum attenuation on ESP32-S3)
         .bitwidth = ADC_BITWIDTH_DEFAULT,
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(s_adc_handle, BATTERY_ADC_CHANNEL, &chan_cfg));
@@ -43,7 +43,7 @@ void battery_init(void) {
     if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &s_cali_handle) == ESP_OK) {
         s_cali_ok = true;
     } else {
-        ESP_LOGW(TAG, "ADC 캘리브레이션 실패, raw 값 근사치 사용");
+        ESP_LOGW(TAG, "ADC calibration failed, using raw value approximation");
     }
 
     ESP_LOGI(TAG, "battery ADC init done (GPIO%d)", BATTERY_ADC_GPIO);
@@ -56,7 +56,7 @@ float battery_read_voltage(void) {
     if (s_cali_ok) {
         adc_cali_raw_to_voltage(s_cali_handle, raw, &mv);
     } else {
-        mv = (raw * 3300) / 4095; // 대략적인 근사치
+        mv = (raw * 3300) / 4095; // rough approximation
     }
 
     return (mv / 1000.0f) * VOLTAGE_DIVIDER_RATIO;

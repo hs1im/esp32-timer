@@ -1,31 +1,31 @@
 /*
- * 배선:
+ * Wiring:
  *  OLED VCC -> 3V3     OLED GND -> GND
  *  OLED CLK -> GPIO7 (D8)   OLED MOSI -> GPIO9 (D10)
  *  OLED RES -> GPIO3 (D2)   OLED DC   -> GPIO2 (D1)
  *  OLED CS  -> GPIO4 (D3)
  *
  *  BTN_1 -> GPIO1 (D0)   BTN_2 -> GPIO5 (D4)   BTN_3 -> GPIO6 (D5)
- *  (버튼 반대쪽 다리는 모두 GND)
+ *  (the other leg of every button goes to GND)
  *
- *  배터리 ADC -> GPIO8 (D9, 예전 BTN_4 자리) - 100k+100k 전압 분배기 경유
+ *  Battery ADC -> GPIO8 (D9, the former BTN_4 pin) - via a 100k+100k voltage divider
  *
- *  사용 금지 핀: GPIO43/44 (D6/D7, USB UART0), GPIO19/20 (네이티브 USB)
+ *  Forbidden pins: GPIO43/44 (D6/D7, USB UART0), GPIO19/20 (native USB)
  */
 /*
- * main.c - 초시계(Stopwatch) 앱
- * 대상 보드: Seeed Studio XIAO ESP32-S3
+ * main.c - Stopwatch app
+ * Target board: Seeed Studio XIAO ESP32-S3
  *
- *  BTN_1 (GPIO1, D0): 시작 / 일시정지
- *  BTN_2 (GPIO5, D4): 초기화 (일시정지 상태에서만 동작, 실행 중엔 무시됨)
- *  BTN_3 (GPIO6, D5): 추후 기능 추가 예정 (현재 무시)
+ *  BTN_1 (GPIO1, D0): start / pause
+ *  BTN_2 (GPIO5, D4): reset (only works while paused, ignored while running)
+ *  BTN_3 (GPIO6, D5): reserved for a future feature (currently ignored)
  *
- *  화면 갱신: 하드웨어 타이머(gptimer) 인터럽트로 60Hz 트리거
- *  (실패 시 자동 30Hz), 숫자 영역만 부분 전송
- *  시간 측정: esp_timer_get_time() 기반, 갱신 주기와 완전히 독립적으로 계산
+ *  Display refresh: triggered at 60Hz by a hardware timer (gptimer) interrupt
+ *  (falls back to 30Hz on failure), only the digit area is sent (partial update)
+ *  Time measurement: based on esp_timer_get_time(), fully independent of the refresh rate
  *
- *  상단 바: 배터리 잔량 (esp_timer 기준 10초에 한 번 갱신)
- *  하단 바: 스톱워치 실행 중일 때만 초록색으로 표시
+ *  Top bar: battery level (refreshed once every 10 seconds, based on esp_timer)
+ *  Bottom bar: shown in green only while the stopwatch is running
  */
 #include "ssd1351.h"
 #include "button.h"
@@ -44,27 +44,27 @@
 #define PIN_DC   2
 #define PIN_RST  3
 
-#define TARGET_HZ 60 // 화면 갱신 주파수. 안되면 stopwatch_init 내부에서 자동 30Hz로 낮춰짐
+#define TARGET_HZ 60 // display refresh rate. Falls back to 30Hz inside stopwatch_init on failure
 
-// 배터리 바 갱신 주기 (esp_timer_get_time() 기준 실제 시간, 화면 갱신 주파수와 무관)
+// Battery bar refresh interval (real time from esp_timer_get_time(), independent of the refresh rate)
 #define BATT_UPDATE_INTERVAL_US (10 * 1000000LL)
 
 static const char *TAG = "main";
 
-// 숫자 레이아웃: "MM:SS" 형식, 5칸(digit,digit,colon,digit,digit)
+// Digit layout: "MM:SS" format, 5 cells (digit, digit, colon, digit, digit)
 #define DIGIT_W  22
 #define DIGIT_H  50
 #define DIGIT_TH 6
 #define COLON_W  14
 #define GAP      4
 
-#define AREA_Y 39 // (128-50)/2 근처, 세로 중앙
+#define AREA_Y 39 // around (128-50)/2, vertically centered
 
-// 상단 배터리 바
+// Top battery bar
 #define BATT_BAR_Y0 0
 #define BATT_BAR_Y1 5
 
-// 하단 실행 표시 바
+// Bottom running indicator bar
 #define RUN_BAR_Y0 (SSD1351_HEIGHT - 6)
 #define RUN_BAR_Y1 (SSD1351_HEIGHT - 1)
 
@@ -90,7 +90,7 @@ static void draw_time(int64_t elapsed_ms, bool force_full) {
 
 static void display_task(void *arg) {
     ssd1351_t oled;
-    ESP_LOGI(TAG, "SSD1351 OLED 초기화 시작");
+    ESP_LOGI(TAG, "SSD1351 OLED init start");
     ssd1351_init(&oled, PIN_SCK, PIN_MOSI, PIN_CS, PIN_DC, PIN_RST);
     ssd1351_fill_screen(&oled, SSD1351_BLACK);
 
@@ -103,18 +103,18 @@ static void display_task(void *arg) {
     draw_time(0, true);
     ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
 
-    int64_t last_batt_us = -BATT_UPDATE_INTERVAL_US; // 첫 틱에 바로 한 번 그림
+    int64_t last_batt_us = -BATT_UPDATE_INTERVAL_US; // draw once right on the first tick
     sw_state_t last_state = SW_STOPPED;
     bool first_run_draw = true;
 
     while (1) {
         if (xSemaphoreTake(tick_sem, portMAX_DELAY) == pdTRUE) {
-            // 1) 시간 표시 갱신 (매 틱마다, 부드럽게)
+            // 1) Update the time display (every tick, for smooth updates)
             int64_t elapsed = stopwatch_get_elapsed_ms();
             draw_time(elapsed, false);
             ssd1351_flush_rect(&oled, area_x0, AREA_Y, area_x1, AREA_Y + DIGIT_H - 1);
 
-            // 2) 배터리 바 (esp_timer 기준 BATT_UPDATE_INTERVAL_US마다 한 번만 갱신)
+            // 2) Battery bar (updated only once per BATT_UPDATE_INTERVAL_US, based on esp_timer)
             int64_t now_us = esp_timer_get_time();
             if (now_us - last_batt_us >= BATT_UPDATE_INTERVAL_US) {
                 last_batt_us = now_us;
@@ -126,7 +126,7 @@ static void display_task(void *arg) {
                 ssd1351_flush_rect(&oled, 0, BATT_BAR_Y0, SSD1351_WIDTH - 1, BATT_BAR_Y1);
             }
 
-            // 3) 실행 상태 표시 바 (상태가 바뀔 때만 갱신 -> 불필요한 전송/깜빡임 방지)
+            // 3) Running indicator bar (redrawn only when the state changes -> avoids needless transfers/flicker)
             sw_state_t cur_state = stopwatch_get_state();
             if (cur_state != last_state || first_run_draw) {
                 last_state = cur_state;
@@ -151,10 +151,10 @@ static void button_task(void *arg) {
                     stopwatch_toggle();
                     break;
                 case BTN_2:
-                    stopwatch_reset(); // 일시정지 상태에서만 실제로 리셋됨 (stopwatch.c에서 처리)
+                    stopwatch_reset(); // only actually resets while paused (handled in stopwatch.c)
                     break;
                 case BTN_3:
-                    // 추후 기능 추가 예정
+                    // reserved for a future feature
                     break;
                 default:
                     break;

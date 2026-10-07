@@ -1,6 +1,6 @@
 /*
  * stopwatch.c
- * 시간 측정(esp_timer) + 화면 갱신 트리거(gptimer 하드웨어 인터럽트) 구현
+ * Time measurement (esp_timer) + display refresh trigger (gptimer hardware interrupt)
  */
 #include "stopwatch.h"
 #include "driver/gptimer.h"
@@ -16,7 +16,7 @@ static sw_state_t s_state = SW_STOPPED;
 static int64_t s_start_us = 0;
 static int64_t s_accumulated_us = 0;
 
-// 타이머 인터럽트 콜백: 무거운 작업 없이 세마포어만 올립니다.
+// Timer interrupt callback: no heavy work, only gives the semaphore.
 static bool IRAM_ATTR gptimer_alarm_cb(gptimer_handle_t timer,
                                        const gptimer_alarm_event_data_t *edata,
                                        void *user_ctx) {
@@ -35,7 +35,7 @@ static bool try_start_timer(int hz) {
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
         .direction = GPTIMER_COUNT_UP,
-        .resolution_hz = 1000000, // 1MHz -> 1틱 = 1us
+        .resolution_hz = 1000000, // 1MHz -> 1 tick = 1us
     };
     if (gptimer_new_timer(&timer_config, &s_gptimer) != ESP_OK) return false;
 
@@ -61,9 +61,9 @@ SemaphoreHandle_t stopwatch_init(int target_hz) {
     s_tick_sem = xSemaphoreCreateBinary();
 
     if (!try_start_timer(target_hz)) {
-        ESP_LOGW(TAG, "%dHz 설정 실패, 30Hz로 재시도", target_hz);
+        ESP_LOGW(TAG, "%dHz setup failed, retrying at 30Hz", target_hz);
         if (!try_start_timer(30)) {
-            ESP_LOGE(TAG, "gptimer 초기화 실패");
+            ESP_LOGE(TAG, "gptimer init failed");
         }
     }
     return s_tick_sem;

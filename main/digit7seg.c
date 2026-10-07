@@ -1,8 +1,8 @@
 /*
  * digit7seg.c
- * 7-세그먼트 스타일 숫자 렌더러 구현
+ * 7-segment style digit renderer implementation
  *
- * 세그먼트 배치 (a~g):
+ * Segment layout (a-g):
  *   ---a---
  *  f       b
  *   ---g---
@@ -11,7 +11,7 @@
  */
 #include "digit7seg.h"
 
-// 각 숫자별로 켜지는 세그먼트 (a,b,c,d,e,f,g 순서, 1=켜짐)
+// Segments lit for each digit (order a,b,c,d,e,f,g, 1 = lit)
 static const uint8_t seg_table[10][7] = {
     /*0*/ {1,1,1,1,1,1,0},
     /*1*/ {0,1,1,0,0,0,0},
@@ -30,22 +30,22 @@ void digit_draw(int x, int y, int w, int h, int thick, int digit, uint16_t color
     const uint8_t *seg = seg_table[digit];
     int half_h = h / 2;
 
-    // 배경을 먼저 지웁니다 (숫자 박스 전체)
+    // Clear the background first (whole digit box)
     ssd1351_fb_set(x, y, x + w - 1, y + h - 1, bg);
 
-    // a: 상단 가로
+    // a: top horizontal
     if (seg[0]) ssd1351_fb_set(x + thick, y, x + w - thick - 1, y + thick - 1, color);
-    // b: 우측 상단 세로
+    // b: upper right vertical
     if (seg[1]) ssd1351_fb_set(x + w - thick, y + thick, x + w - 1, y + half_h - 1, color);
-    // c: 우측 하단 세로
+    // c: lower right vertical
     if (seg[2]) ssd1351_fb_set(x + w - thick, y + half_h + 1, x + w - 1, y + h - thick - 1, color);
-    // d: 하단 가로
+    // d: bottom horizontal
     if (seg[3]) ssd1351_fb_set(x + thick, y + h - thick, x + w - thick - 1, y + h - 1, color);
-    // e: 좌측 하단 세로
+    // e: lower left vertical
     if (seg[4]) ssd1351_fb_set(x, y + half_h + 1, x + thick - 1, y + h - thick - 1, color);
-    // f: 좌측 상단 세로
+    // f: upper left vertical
     if (seg[5]) ssd1351_fb_set(x, y + thick, x + thick - 1, y + half_h - 1, color);
-    // g: 중앙 가로
+    // g: middle horizontal
     if (seg[6]) ssd1351_fb_set(x + thick, y + half_h - thick / 2, x + w - thick - 1, y + half_h + thick / 2 - 1, color);
 }
 

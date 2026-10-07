@@ -1,6 +1,6 @@
 /*
  * stopwatch.h
- * esp_timer 기반 정밀 시간 측정 + gptimer 기반 주기적 화면 갱신 트리거
+ * Precise time measurement based on esp_timer + periodic display refresh trigger based on gptimer
  */
 #pragma once
 #include <stdint.h>
@@ -14,18 +14,19 @@ typedef enum {
     SW_PAUSED,
 } sw_state_t;
 
-/* 하드웨어 타이머(gptimer)를 설정하고, 화면 갱신 신호용 세마포어를 반환합니다.
-   target_hz: 60을 넣으면 60Hz, 실패 시 자동으로 30Hz로 낮춥니다. */
+/* Sets up the hardware timer (gptimer) and returns the semaphore used as the
+   display refresh signal.
+   target_hz: 60 means 60Hz; falls back to 30Hz automatically on failure. */
 SemaphoreHandle_t stopwatch_init(int target_hz);
 
-/* BTN1 동작: STOPPED/PAUSED -> RUNNING, RUNNING -> PAUSED */
+/* BTN1 action: STOPPED/PAUSED -> RUNNING, RUNNING -> PAUSED */
 void stopwatch_toggle(void);
 
-/* BTN2 동작: STOPPED/PAUSED 상태에서만 0으로 초기화.
-   RUNNING 중에는 무시됨 (먼저 일시정지해야 함) */
+/* BTN2 action: resets to 0 only in the STOPPED/PAUSED state.
+   Ignored while RUNNING (pause first). */
 void stopwatch_reset(void);
 
-/* 현재 경과 시간을 ms 단위로 반환 (RUNNING 중이면 실시간 계산) */
+/* Returns the elapsed time in ms (computed live while RUNNING) */
 int64_t stopwatch_get_elapsed_ms(void);
 
 sw_state_t stopwatch_get_state(void);

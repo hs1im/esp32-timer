@@ -1,13 +1,12 @@
 /*
- * ssd1351_dma.c
- * SSD1351 128x128 SPI OLED 드라이버 - GDMA(DMA) 최적화 버전
- * 기존 ssd1351.c를 이 파일로 교체하면 됩니다.
+ * ssd1351.c
+ * SSD1351 128x128 SPI OLED driver - GDMA (DMA) optimized version
  *
- * 변경점:
- *  1) 라인 단위 전송 -> 프레임버퍼 통째로 1회 DMA 전송
- *  2) heap_caps_malloc(MALLOC_CAP_DMA)로 DMA 캐퍼블 메모리에 버퍼 할당
- *  3. spi_device_polling_transmit -> spi_device_transmit
- *     (큰 전송은 드라이버가 자동으로 GDMA 경로를 사용)
+ * Notes:
+ *  1) The framebuffer is sent in one DMA transfer instead of line by line
+ *  2) Buffers are allocated in DMA-capable memory with heap_caps_malloc(MALLOC_CAP_DMA)
+ *  3) spi_device_transmit is used for large transfers
+ *     (the driver automatically uses the GDMA path for them)
  */
 #include <string.h>
 #include "ssd1351.h"
@@ -40,13 +39,13 @@ static const char *TAG = "ssd1351";
 #define CMD_MUXRATIO       0xCA
 #define CMD_COMMANDLOCK    0xFD
 
-// DMA 캐퍼블 프레임버퍼 (128*128*2 bytes = 32KB)
+// DMA-capable framebuffer (128*128*2 bytes = 32KB)
 static uint8_t *fb = NULL;
 
 static void gpio_low(int pin)  { gpio_set_level(pin, 0); }
 static void gpio_high(int pin) { gpio_set_level(pin, 1); }
 
-// 작은 전송(명령/짧은 데이터)은 polling, 큰 전송(프레임버퍼)은 DMA 경유 transmit 사용
+// Small transfers (commands / short data) use polling, large ones (framebuffer) use DMA transmit
 static void spi_write_polling(ssd1351_t *dev, const uint8_t *data, size_t len) {
     if (len == 0) return;
     spi_transaction_t t = { .length = len * 8, .tx_buffer = data };
@@ -56,7 +55,7 @@ static void spi_write_polling(ssd1351_t *dev, const uint8_t *data, size_t len) {
 static void spi_write_dma(ssd1351_t *dev, const uint8_t *data, size_t len) {
     if (len == 0) return;
     spi_transaction_t t = { .length = len * 8, .tx_buffer = data };
-    // 큰 버퍼는 spi_device_transmit이 내부적으로 GDMA 경로를 사용
+    // For large buffers spi_device_transmit uses the GDMA path internally
     ESP_ERROR_CHECK(spi_device_transmit(dev->spi, &t));
 }
 
@@ -103,23 +102,23 @@ void ssd1351_init(ssd1351_t *dev,
         .sclk_io_num = pin_sck,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = SSD1351_WIDTH * SSD1351_HEIGHT * 2, // 프레임버퍼 통째 전송 허용
+        .max_transfer_sz = SSD1351_WIDTH * SSD1351_HEIGHT * 2, // allow sending the whole framebuffer at once
     };
-    // SPI_DMA_CH_AUTO -> GDMA 채널 자동 할당
+    // SPI_DMA_CH_AUTO -> GDMA channel is assigned automatically
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 8 * 1000 * 1000, // DMA 활용 시 클럭을 더 올려도 안정적
+        .clock_speed_hz = 8 * 1000 * 1000, // with DMA the clock can be raised and still be stable
         .mode = 0,
         .spics_io_num = pin_cs,
         .queue_size = 2,
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &devcfg, &dev->spi));
 
-    // DMA 캐퍼블 메모리에 프레임버퍼 할당 (필수: MALLOC_CAP_DMA)
+    // Allocate the framebuffer in DMA-capable memory (required: MALLOC_CAP_DMA)
     fb = heap_caps_malloc(SSD1351_WIDTH * SSD1351_HEIGHT * 2, MALLOC_CAP_DMA);
     if (fb == NULL) {
-        ESP_LOGE(TAG, "프레임버퍼 DMA 메모리 할당 실패");
+        ESP_LOGE(TAG, "Framebuffer DMA memory allocation failed");
     }
 
     gpio_high(dev->pin_rst);
@@ -153,7 +152,7 @@ void ssd1351_init(ssd1351_t *dev,
     ESP_LOGI(TAG, "SSD1351 init complete (DMA framebuffer ready)");
 }
 
-// 프레임버퍼에만 그리는 함수 (아직 화면에 전송 안 함)
+// Draws into the framebuffer only (not sent to the screen yet)
 void ssd1351_fb_fill_rect(int x0, int y0, int x1, int y1, uint16_t color) {
     if (fb == NULL) return;
     uint8_t hi = color >> 8, lo = color & 0xFF;
@@ -166,7 +165,7 @@ void ssd1351_fb_fill_rect(int x0, int y0, int x1, int y1, uint16_t color) {
     }
 }
 
-// 프레임버퍼 전체를 GDMA로 한 번에 전송 (핵심: 128*128*2 바이트를 1회 전송)
+// Sends the whole framebuffer in one GDMA transfer (128*128*2 bytes at once)
 void ssd1351_flush(ssd1351_t *dev) {
     if (fb == NULL) return;
     set_addr_window(dev, 0, 0, SSD1351_WIDTH - 1, SSD1351_HEIGHT - 1);
@@ -189,12 +188,12 @@ void ssd1351_draw_pixel(ssd1351_t *dev, int x, int y, uint16_t color) {
     ssd1351_flush(dev);
 }
 
-// 프레임버퍼에만 그리기 (즉시 전송 안 함) - 공개 API
+// Draw into the framebuffer only (not sent immediately) - public API
 void ssd1351_fb_set(int x0, int y0, int x1, int y1, uint16_t color) {
     ssd1351_fb_fill_rect(x0, y0, x1, y1, color);
 }
 
-// 지정한 사각 영역만 화면으로 전송 (부분 갱신, 고속 리프레시용)
+// Sends only the given rectangle to the screen (partial update, fast refresh)
 void ssd1351_flush_rect(ssd1351_t *dev, int x0, int y0, int x1, int y1) {
     if (fb == NULL) return;
     if (x0 < 0) x0 = 0;
@@ -206,7 +205,7 @@ void ssd1351_flush_rect(ssd1351_t *dev, int x0, int y0, int x1, int y1) {
     int w = x1 - x0 + 1;
     int h = y1 - y0 + 1;
 
-    // 부분 영역용 임시 DMA 버퍼 (재사용, 최초 1회만 할당)
+    // Temporary DMA buffer for the partial region (reused, allocated only once)
     static uint8_t *region_buf = NULL;
     static size_t region_buf_cap = 0;
     size_t need = (size_t)w * h * 2;

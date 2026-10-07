@@ -1,7 +1,7 @@
 /*
  * button.h
- * 3개 버튼을 GPIO 하드웨어 인터럽트로 처리하는 모듈
- * 대상 보드: Seeed Studio XIAO ESP32-S3
+ * Module that handles 3 buttons with GPIO hardware interrupts
+ * Target board: Seeed Studio XIAO ESP32-S3
  */
 #pragma once
 
@@ -18,7 +18,7 @@ typedef enum {
 } button_id_t;
 
 /*
- * 버튼 GPIO를 인터럽트 입력으로 설정하고, 눌림 이벤트를 받을
- * 큐를 생성해서 반환합니다. (큐의 각 아이템 타입: button_id_t)
+ * Configures the button GPIOs as interrupt inputs and creates and returns
+ * the queue that receives press events. (queue item type: button_id_t)
  */
 QueueHandle_t button_init(void);
