@@ -48,9 +48,14 @@
 #define BATTERY_ADC_GPIO          8                // XIAO D9 (the former BTN_4 pin)
 #define BATTERY_ADC_CHANNEL       ADC_CHANNEL_7    // ADC1_CH7 = GPIO8 on ESP32-S3
 #define BATTERY_DIVIDER_RATIO     2.0f             // 100k:100k divider -> real voltage is 2x the pin voltage
-#define BATTERY_FULL_V            4.2f             // Voltage treated as 100% (1S LiPo)
-#define BATTERY_EMPTY_V           3.0f             // Voltage treated as 0% (1S LiPo)
 #define BATTERY_UPDATE_INTERVAL_US (10 * 1000000LL) // How often the battery bar is refreshed (10s, real time)
+
+// Discharge curve of a typical 1S LiPo: { voltage in V, charge in % }.
+// Rows must be sorted from the highest voltage to the lowest. The charge level is
+// linearly interpolated between two rows, so more rows near steep parts = more accuracy.
+// The curve is flat between ~4.1V and ~3.7V and drops quickly below that, which is why
+// a straight 3.0V-4.2V mapping looks wrong. Tune these rows to your own battery.
+#define BATTERY_CURVE_TABLE     { 4.20f, 100 },     { 4.11f,  90 },     { 4.02f,  80 },     { 3.95f,  70 },     { 3.87f,  60 },     { 3.84f,  50 },     { 3.80f,  40 },     { 3.77f,  30 },     { 3.73f,  20 },     { 3.69f,  10 },     { 3.61f,   5 },     { 3.30f,   0 }
 
 /* ------------------------------------------------------------------ */
 /* Timing                                                              */

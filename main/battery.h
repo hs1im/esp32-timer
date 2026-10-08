@@ -13,5 +13,6 @@ void battery_init(void);
 /* Returns the actual battery voltage in V (divider ratio 2.0 compensated). */
 float battery_read_voltage(void);
 
-/* Returns an approximate charge level in the 0-100 range (1S LiPo). */
+/* Returns an approximate charge level in the 0-100 range (1S LiPo),
+   using the discharge curve table BATTERY_CURVE_TABLE in constants.h. */
 int battery_read_percent(void);

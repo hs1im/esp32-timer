@@ -54,9 +54,26 @@ float battery_read_voltage(void) {
     return (mv / 1000.0f) * BATTERY_DIVIDER_RATIO;
 }
 
+typedef struct {
+    float voltage;
+    int percent;
+} battery_point_t;
+
+static const battery_point_t s_curve[] = { BATTERY_CURVE_TABLE };
+#define CURVE_LEN (sizeof(s_curve) / sizeof(s_curve[0]))
+
 int battery_read_percent(void) {
     float v = battery_read_voltage();
-    if (v >= BATTERY_FULL_V) return 100;
-    if (v <= BATTERY_EMPTY_V) return 0;
-    return (int)(((v - BATTERY_EMPTY_V) / (BATTERY_FULL_V - BATTERY_EMPTY_V)) * 100.0f);
+    if (v >= s_curve[0].voltage) return s_curve[0].percent;
+    if (v <= s_curve[CURVE_LEN - 1].voltage) return s_curve[CURVE_LEN - 1].percent;
+
+    // Find the two table rows around v and interpolate linearly between them
+    for (size_t i = 1; i < CURVE_LEN; i++) {
+        if (v >= s_curve[i].voltage) {
+            float v_hi = s_curve[i - 1].voltage, v_lo = s_curve[i].voltage;
+            int p_hi = s_curve[i - 1].percent, p_lo = s_curve[i].percent;
+            return p_lo + (int)((v - v_lo) / (v_hi - v_lo) * (p_hi - p_lo));
+        }
+    }
+    return 0;
 }
