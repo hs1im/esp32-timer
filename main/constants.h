@@ -60,12 +60,22 @@
 #define GPTIMER_RESOLUTION_HZ 1000000     // gptimer counter clock: 1MHz -> 1 tick = 1us
 
 /* ------------------------------------------------------------------ */
+/* Persistent storage (NVS flash, survives power loss)                 */
+/* ------------------------------------------------------------------ */
+
+#define STOPWATCH_NVS_NAMESPACE   "stopwatch" // NVS namespace that holds the saved elapsed time
+#define STOPWATCH_NVS_KEY         "elapsed"   // NVS key of the saved elapsed time (int64, microseconds)
+#define STOPWATCH_SAVE_INTERVAL_US (10 * 1000000LL) // While running, save the elapsed time this often (10s).
+                                                    // On power loss at most this much time is lost.
+                                                    // NVS wear leveling makes this safe for years of use.
+
+/* ------------------------------------------------------------------ */
 /* FreeRTOS tasks                                                      */
 /* ------------------------------------------------------------------ */
 
-#define DISPLAY_TASK_STACK    4096        // Stack size in bytes
+#define DISPLAY_TASK_STACK    6144        // Stack size in bytes (also runs periodic NVS saves)
 #define DISPLAY_TASK_PRIORITY 5
-#define BUTTON_TASK_STACK     2048        // Stack size in bytes
+#define BUTTON_TASK_STACK     4096        // Stack size in bytes (NVS saves on pause / reset)
 #define BUTTON_TASK_PRIORITY  6           // Higher than the display task so button presses are handled promptly
 
 /* ------------------------------------------------------------------ */

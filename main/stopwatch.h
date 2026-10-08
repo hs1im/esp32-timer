@@ -26,6 +26,10 @@ void stopwatch_toggle(void);
    Ignored while RUNNING (pause first). */
 void stopwatch_reset(void);
 
+/* While RUNNING, saves the elapsed time to flash (NVS) once per
+   STOPWATCH_SAVE_INTERVAL_US. Call this regularly from the display loop. */
+void stopwatch_save_if_due(void);
+
 /* Returns the elapsed time in ms (computed live while RUNNING) */
 int64_t stopwatch_get_elapsed_ms(void);
 

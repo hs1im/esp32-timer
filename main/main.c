@@ -38,6 +38,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "battery.h"
+#include "nvs_flash.h"
 
 static const char *TAG = "main";
 
@@ -76,7 +77,7 @@ static void display_task(void *arg) {
 
     SemaphoreHandle_t tick_sem = stopwatch_init(DISPLAY_REFRESH_HZ);
 
-    draw_time(0, true);
+    draw_time(stopwatch_get_elapsed_ms(), true); // shows the restored time after a power-off
     ssd1351_flush_rect(&oled, area_x0, TIME_AREA_Y, area_x1, TIME_AREA_Y + DIGIT_H - 1);
 
     int64_t last_batt_us = -BATTERY_UPDATE_INTERVAL_US; // draw once right on the first tick
@@ -102,7 +103,10 @@ static void display_task(void *arg) {
                 ssd1351_flush_rect(&oled, 0, BATT_BAR_Y0, SSD1351_WIDTH - 1, BATT_BAR_Y1);
             }
 
-            // 3) Running indicator bar (redrawn only when the state changes -> avoids needless transfers/flicker)
+            // 3) Persist the elapsed time (only does something once per STOPWATCH_SAVE_INTERVAL_US)
+            stopwatch_save_if_due();
+
+            // 4) Running indicator bar (redrawn only when the state changes -> avoids needless transfers/flicker)
             sw_state_t cur_state = stopwatch_get_state();
             if (cur_state != last_state || first_run_draw) {
                 last_state = cur_state;
@@ -140,6 +144,14 @@ static void button_task(void *arg) {
 }
 
 void app_main(void) {
+    // NVS must be ready before stopwatch_init() restores the saved time
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+
     battery_init();
     QueueHandle_t btn_evt_queue = button_init();
 

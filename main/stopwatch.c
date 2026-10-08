@@ -7,6 +7,7 @@
 #include "driver/gptimer.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "nvs.h"
 
 static const char *TAG = "stopwatch";
 
@@ -16,6 +17,30 @@ static SemaphoreHandle_t s_tick_sem = NULL;
 static sw_state_t s_state = SW_STOPPED;
 static int64_t s_start_us = 0;
 static int64_t s_accumulated_us = 0;
+static int64_t s_last_save_us = 0;
+
+// Writes the elapsed time to NVS so it survives a power loss.
+static void save_elapsed(int64_t elapsed_us) {
+    nvs_handle_t h;
+    if (nvs_open(STOPWATCH_NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        ESP_LOGW(TAG, "NVS open failed, elapsed time not saved");
+        return;
+    }
+    if (nvs_set_i64(h, STOPWATCH_NVS_KEY, elapsed_us) != ESP_OK || nvs_commit(h) != ESP_OK) {
+        ESP_LOGW(TAG, "NVS write failed, elapsed time not saved");
+    }
+    nvs_close(h);
+}
+
+// Reads the saved elapsed time from NVS (0 if nothing was saved yet).
+static int64_t load_elapsed(void) {
+    nvs_handle_t h;
+    int64_t elapsed_us = 0;
+    if (nvs_open(STOPWATCH_NVS_NAMESPACE, NVS_READONLY, &h) != ESP_OK) return 0;
+    if (nvs_get_i64(h, STOPWATCH_NVS_KEY, &elapsed_us) != ESP_OK) elapsed_us = 0;
+    nvs_close(h);
+    return elapsed_us > 0 ? elapsed_us : 0;
+}
 
 // Timer interrupt callback: no heavy work, only gives the semaphore.
 static bool IRAM_ATTR gptimer_alarm_cb(gptimer_handle_t timer,
@@ -61,6 +86,14 @@ static bool try_start_timer(int hz) {
 SemaphoreHandle_t stopwatch_init(int target_hz) {
     s_tick_sem = xSemaphoreCreateBinary();
 
+    // Restore the time saved before the last power-off. It always comes back
+    // paused, because time cannot be measured while the power is off.
+    int64_t saved_us = load_elapsed();
+    if (saved_us > 0) {
+        s_accumulated_us = saved_us;
+        s_state = SW_PAUSED;
+    }
+
     if (!try_start_timer(target_hz)) {
         ESP_LOGW(TAG, "%dHz setup failed, retrying at %dHz", target_hz, DISPLAY_FALLBACK_HZ);
         if (!try_start_timer(DISPLAY_FALLBACK_HZ)) {
@@ -74,11 +107,21 @@ void stopwatch_toggle(void) {
     int64_t now = esp_timer_get_time();
     if (s_state == SW_STOPPED || s_state == SW_PAUSED) {
         s_start_us = now;
+        s_last_save_us = now;
         s_state = SW_RUNNING;
     } else if (s_state == SW_RUNNING) {
         s_accumulated_us += now - s_start_us;
         s_state = SW_PAUSED;
+        save_elapsed(s_accumulated_us);
     }
+}
+
+void stopwatch_save_if_due(void) {
+    if (s_state != SW_RUNNING) return;
+    int64_t now = esp_timer_get_time();
+    if (now - s_last_save_us < STOPWATCH_SAVE_INTERVAL_US) return;
+    s_last_save_us = now;
+    save_elapsed(s_accumulated_us + (now - s_start_us));
 }
 
 void stopwatch_reset(void) {
@@ -89,6 +132,7 @@ void stopwatch_reset(void) {
     s_state = SW_STOPPED;
     s_accumulated_us = 0;
     s_start_us = 0;
+    save_elapsed(0);
 }
 
 int64_t stopwatch_get_elapsed_ms(void) {
