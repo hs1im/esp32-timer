@@ -16,7 +16,7 @@ typedef enum {
 
 /* Sets up the hardware timer (gptimer) and returns the semaphore used as the
    display refresh signal.
-   target_hz: 60 means 60Hz; falls back to 30Hz automatically on failure. */
+   target_hz: refresh rate in Hz; falls back to 30Hz automatically on failure. */
 SemaphoreHandle_t stopwatch_init(int target_hz);
 
 /* BTN1 action: STOPPED/PAUSED -> RUNNING, RUNNING -> PAUSED */

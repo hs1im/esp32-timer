@@ -1,0 +1,3 @@
+# Project defaults (sdkconfig itself is git-ignored)
+# Run the CPU at 80MHz to save power; a stopwatch does not need more.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y

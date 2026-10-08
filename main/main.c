@@ -20,7 +20,7 @@
  *  BTN_2 (GPIO5, D4): reset (only works while paused, ignored while running)
  *  BTN_3 (GPIO6, D5): reserved for a future feature (currently ignored)
  *
- *  Display refresh: triggered at 60Hz by a hardware timer (gptimer) interrupt
+ *  Display refresh: triggered at DISPLAY_REFRESH_HZ by a hardware timer (gptimer) interrupt
  *  (falls back to 30Hz on failure), only the digit area is sent (partial update)
  *  Time measurement: based on esp_timer_get_time(), fully independent of the refresh rate
  *

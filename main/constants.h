@@ -25,9 +25,10 @@
 #define OLED_SPI_HOST     SPI2_HOST       // SPI peripheral used by the display
 #define OLED_SPI_CLOCK_HZ (8 * 1000 * 1000) // SPI clock; 20MHz showed noise stripes with jumper wires
 
-#define DISPLAY_BRIGHTNESS 0x03           // Panel brightness: SSD1351 master contrast register, 0x00-0x0F.
+#define DISPLAY_BRIGHTNESS 0x01           // Panel brightness: SSD1351 master contrast register, 0x00-0x0F.
                                           // Drive current = (value+1)/16 of the maximum:
-                                          // 0x0F = 100%, 0x07 = 50%, 0x03 = 25%, 0x00 = 6%. Lower saves battery.
+                                          // 0x0F = 100%, 0x07 = 50%, 0x03 = 25%, 0x01 = 12.5%, 0x00 = 6%.
+                                          // Lower saves battery.
 
 /* ------------------------------------------------------------------ */
 /* Buttons (GPIO interrupt, internal pull-up, active low)              */
@@ -55,7 +56,9 @@
 /* Timing                                                              */
 /* ------------------------------------------------------------------ */
 
-#define DISPLAY_REFRESH_HZ   60           // Target display refresh rate (gptimer alarm frequency)
+#define DISPLAY_REFRESH_HZ   8            // Target display refresh rate (gptimer alarm frequency).
+                                          // Lower = less power. Pick a divisor of 1,000,000 (e.g. 8, 10, 50, 64)
+                                          // so the timer period in microseconds is exact.
 #define DISPLAY_FALLBACK_HZ  30           // Rate used if the target rate cannot be set up
 #define GPTIMER_RESOLUTION_HZ 1000000     // gptimer counter clock: 1MHz -> 1 tick = 1us
 
