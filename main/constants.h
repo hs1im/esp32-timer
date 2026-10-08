@@ -48,14 +48,26 @@
 #define BATTERY_ADC_GPIO          8                // XIAO D9 (the former BTN_4 pin)
 #define BATTERY_ADC_CHANNEL       ADC_CHANNEL_7    // ADC1_CH7 = GPIO8 on ESP32-S3
 #define BATTERY_DIVIDER_RATIO     2.0f             // 100k:100k divider -> real voltage is 2x the pin voltage
-#define BATTERY_UPDATE_INTERVAL_US (10 * 1000000LL) // How often the battery bar is refreshed (10s, real time)
+#define BATTERY_UPDATE_INTERVAL_US (10 * 1000000LL) // How often the battery icon is refreshed (10s, real time)
 
 // Discharge curve of a typical 1S LiPo: { voltage in V, charge in % }.
 // Rows must be sorted from the highest voltage to the lowest. The charge level is
 // linearly interpolated between two rows, so more rows near steep parts = more accuracy.
+// 4.11V is treated as 100% (not 4.20V): charging to the very top wears the cell faster.
 // The curve is flat between ~4.1V and ~3.7V and drops quickly below that, which is why
-// a straight 3.0V-4.2V mapping looks wrong. Tune these rows to your own battery.
-#define BATTERY_CURVE_TABLE     { 4.20f, 100 },     { 4.11f,  90 },     { 4.02f,  80 },     { 3.95f,  70 },     { 3.87f,  60 },     { 3.84f,  50 },     { 3.80f,  40 },     { 3.77f,  30 },     { 3.73f,  20 },     { 3.69f,  10 },     { 3.61f,   5 },     { 3.30f,   0 }
+// a straight linear mapping looks wrong. Tune these rows to your own battery.
+#define BATTERY_CURVE_TABLE \
+    { 4.11f, 100 }, \
+    { 4.02f,  88 }, \
+    { 3.95f,  76 }, \
+    { 3.87f,  64 }, \
+    { 3.84f,  52 }, \
+    { 3.80f,  40 }, \
+    { 3.77f,  30 }, \
+    { 3.73f,  20 }, \
+    { 3.69f,  10 }, \
+    { 3.61f,   5 }, \
+    { 3.30f,   0 }
 
 /* ------------------------------------------------------------------ */
 /* Timing                                                              */
@@ -99,8 +111,22 @@
 #define TIME_AREA_Y    ((SSD1351_HEIGHT - DIGIT_H) / 2) // Top y of the time area -> vertically centered
 #define TIME_HOURS_MOD 100                // Hours wrap around after this value (99:59:59 -> 00:00:00)
 
-#define BATT_BAR_Y0    0                  // Top battery bar: first row
-#define BATT_BAR_Y1    5                  // Top battery bar: last row
+// Battery icon (top-left): outlined body + small terminal nub on the right,
+// with BATT_SEG_COUNT filled segments inside showing the charge level.
+#define BATT_ICON_X       2               // Left edge of the icon in pixels
+#define BATT_ICON_Y       2               // Top edge of the icon in pixels
+#define BATT_ICON_BORDER  1               // Outline thickness in pixels
+#define BATT_ICON_PAD     1               // Space between the outline and the segments in pixels
+#define BATT_SEG_COUNT    4               // Number of level segments (4 steps)
+#define BATT_SEG_W        5               // Width of one segment in pixels
+#define BATT_SEG_H        6               // Height of one segment in pixels (same as the old 6px bar)
+#define BATT_SEG_GAP      1               // Space between neighbouring segments in pixels
+#define BATT_NUB_W        2               // Width of the terminal nub on the right in pixels
+#define BATT_NUB_H        4               // Height of the terminal nub in pixels
+#define BATT_LEVEL_STEP_PCT (100 / BATT_SEG_COUNT) // Charge per segment: 1-25% -> 1 segment ... 76-100% -> 4, 0% -> none
+// Derived icon size (do not edit)
+#define BATT_ICON_BODY_W (2 * BATT_ICON_BORDER + 2 * BATT_ICON_PAD + BATT_SEG_COUNT * BATT_SEG_W + (BATT_SEG_COUNT - 1) * BATT_SEG_GAP)
+#define BATT_ICON_BODY_H (2 * BATT_ICON_BORDER + 2 * BATT_ICON_PAD + BATT_SEG_H)
 
 #define RUN_BAR_Y0     (SSD1351_HEIGHT - 6) // Bottom running bar: first row
 #define RUN_BAR_Y1     (SSD1351_HEIGHT - 1) // Bottom running bar: last row

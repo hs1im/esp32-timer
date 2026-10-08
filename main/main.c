@@ -24,7 +24,7 @@
  *  (falls back to 30Hz on failure), only the digit area is sent (partial update)
  *  Time measurement: based on esp_timer_get_time(), fully independent of the refresh rate
  *
- *  Top bar: battery level (refreshed once every 10 seconds, based on esp_timer)
+ *  Top-left icon: battery level in 4 steps (checked once every 10 seconds, based on esp_timer)
  *  Bottom bar: shown in green only while the stopwatch is running
  */
 #include "constants.h"
@@ -64,6 +64,37 @@ static void draw_time(int64_t elapsed_ms, bool force_full) {
     }
 }
 
+// Draws the battery icon (outline + nub + filled level segments) into the framebuffer
+// and sends only the icon area to the screen.
+static void draw_battery_icon(ssd1351_t *oled, int level) {
+    const int x0 = BATT_ICON_X, y0 = BATT_ICON_Y;
+    const int x1 = x0 + BATT_ICON_BODY_W - 1, y1 = y0 + BATT_ICON_BODY_H - 1;
+    const int b = BATT_ICON_BORDER;
+
+    // Clear the whole icon area (body + nub)
+    ssd1351_fb_set(x0, y0, x1 + BATT_NUB_W, y1, SSD1351_BLACK);
+
+    // Body outline: top, bottom, left, right
+    ssd1351_fb_set(x0, y0, x1, y0 + b - 1, SSD1351_WHITE);
+    ssd1351_fb_set(x0, y1 - b + 1, x1, y1, SSD1351_WHITE);
+    ssd1351_fb_set(x0, y0, x0 + b - 1, y1, SSD1351_WHITE);
+    ssd1351_fb_set(x1 - b + 1, y0, x1, y1, SSD1351_WHITE);
+
+    // Terminal nub, vertically centered on the right side
+    int nub_y0 = y0 + (BATT_ICON_BODY_H - BATT_NUB_H) / 2;
+    ssd1351_fb_set(x1 + 1, nub_y0, x1 + BATT_NUB_W, nub_y0 + BATT_NUB_H - 1, SSD1351_WHITE);
+
+    // Level segments, filled from the left
+    int seg_x = x0 + b + BATT_ICON_PAD;
+    int seg_y = y0 + b + BATT_ICON_PAD;
+    for (int i = 0; i < level; i++) {
+        ssd1351_fb_set(seg_x, seg_y, seg_x + BATT_SEG_W - 1, seg_y + BATT_SEG_H - 1, SSD1351_GREEN);
+        seg_x += BATT_SEG_W + BATT_SEG_GAP;
+    }
+
+    ssd1351_flush_rect(oled, x0, y0, x1 + BATT_NUB_W, y1);
+}
+
 static void display_task(void *arg) {
     ssd1351_t oled;
     ESP_LOGI(TAG, "SSD1351 OLED init start");
@@ -81,6 +112,7 @@ static void display_task(void *arg) {
     ssd1351_flush_rect(&oled, area_x0, TIME_AREA_Y, area_x1, TIME_AREA_Y + DIGIT_H - 1);
 
     int64_t last_batt_us = -BATTERY_UPDATE_INTERVAL_US; // draw once right on the first tick
+    int last_batt_level = -1;                           // -1 = icon not drawn yet
     sw_state_t last_state = SW_STOPPED;
     bool first_run_draw = true;
 
@@ -91,16 +123,19 @@ static void display_task(void *arg) {
             draw_time(elapsed, false);
             ssd1351_flush_rect(&oled, area_x0, TIME_AREA_Y, area_x1, TIME_AREA_Y + DIGIT_H - 1);
 
-            // 2) Battery bar (updated only once per BATTERY_UPDATE_INTERVAL_US, based on esp_timer)
+            // 2) Battery icon (checked once per BATTERY_UPDATE_INTERVAL_US, redrawn only when the level changes)
             int64_t now_us = esp_timer_get_time();
             if (now_us - last_batt_us >= BATTERY_UPDATE_INTERVAL_US) {
                 last_batt_us = now_us;
                 int pct = battery_read_percent();
-                int bar_width = (pct * SSD1351_WIDTH) / 100;
+                // Round up to the next step so any remaining charge shows at least 1 segment
+                int level = (pct + BATT_LEVEL_STEP_PCT - 1) / BATT_LEVEL_STEP_PCT;
+                if (level > BATT_SEG_COUNT) level = BATT_SEG_COUNT;
 
-                ssd1351_fb_set(0, BATT_BAR_Y0, SSD1351_WIDTH - 1, BATT_BAR_Y1, SSD1351_BLACK);
-                ssd1351_fb_set(0, BATT_BAR_Y0, bar_width - 1, BATT_BAR_Y1, SSD1351_GREEN);
-                ssd1351_flush_rect(&oled, 0, BATT_BAR_Y0, SSD1351_WIDTH - 1, BATT_BAR_Y1);
+                if (level != last_batt_level) {
+                    last_batt_level = level;
+                    draw_battery_icon(&oled, level);
+                }
             }
 
             // 3) Persist the elapsed time (only does something once per STOPWATCH_SAVE_INTERVAL_US)
